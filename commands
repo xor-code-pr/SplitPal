@@ -1,0 +1,20 @@
+#in emulator
+set EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:7071/api
+npm run android
+
+
+set EXPO_PUBLIC_API_BASE_URL=http://192.168.29.15:7071/api
+
+#web UI
+npx expo start --web
+
+func host start --address 0.0.0.0 --port 7071 --cors "*" 
+func host start --useHttps --cert "splitpal-local.pfx" --password "StrongPass123!" --address 0.0.0.0 --port 7071 --cors "*"
+
+
+
+npm install -g eas-cli
+eas login
+eas build:configure
+eas build --platform android --profile preview
+eas build --platform android --profile preview --local

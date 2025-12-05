@@ -1,0 +1,582 @@
+{
+	"info": {
+		"_postman_id": "049da764-0a91-4767-ad5c-798a9766a282",
+		"name": "MySplit - Full Backend Operations",
+		"description": "Complete Postman collection for the local Splitwise-lite backend (SQLite + Azure Functions). Set the collection variable `base_url` to match your environment (e.g. https://192.168.29.15:7071/api for LAN HTTPS or http://localhost:7071/api when running only on this machine).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "6456019"
+	},
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Ping",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{base_url}}/ping"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Admin (start here)",
+			"item": [
+				{
+					"name": "Login Purnendu (admin)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const json = pm.response.json();",
+									"if (json && json.token) { pm.collectionVariables.set('token_admin', json.token); }",
+									"if (json && json.refresh_token) { pm.collectionVariables.set('refresh_token_admin', json.refresh_token); }"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+						},
+						"url": "{{base_url}}/users/login"
+					},
+					"response": []
+				},
+				{
+					"name": "Admin: List users",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"const users = pm.response.json();",
+									"if (Array.isArray(users)) {",
+									"  const a = users.find(u => u.email === pm.collectionVariables.get('user_email'));",
+									"  const b = users.find(u => u.email === pm.collectionVariables.get('user_b_email'));",
+									"  if (a && a.name) pm.collectionVariables.set('user_a_name', a.name);",
+									"  if (b && b.name) pm.collectionVariables.set('user_b_name', b.name);",
+								"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token_admin}}"
+							}
+						],
+						"url": "{{base_url}}/management/users"
+					},
+					"response": []
+				},
+				{
+					"name": "Admin: List groups",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token_admin}}"
+							}
+						],
+						"url": "{{base_url}}/management/groups"
+					},
+					"response": []
+				},
+				{
+					"name": "Admin: Delete user",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token_admin}}"
+							}
+						],
+						"url": "{{base_url}}/management/users/{{user_id}}"
+					},
+					"response": []
+				},
+				{
+					"name": "Admin: Delete group",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token_admin}}"
+							}
+						],
+						"url": "{{base_url}}/management/groups/{{group_id}}"
+					},
+					"response": []
+				}
+			],
+			"description": "Admin endpoints grouped first for convenience. Use an admin user's token (Purnendu) to call these."
+		},
+		{
+			"name": "Register Aishwarya",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"Aishwarya\",\n  \"email\": \"aishwarya@gmail.com\",\n  \"password\": \"aishpwd\"\n}"
+				},
+					"url": "{{base_url}}/users/register"
+			},
+			"response": []
+		},
+		{
+			"name": "Login Aishwarya",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const json = pm.response.json();",
+							"if (json && json.token) { pm.collectionVariables.set('token', json.token); }",
+							"if (json && json.refresh_token) { pm.collectionVariables.set('refresh_token', json.refresh_token); }"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+				},
+				"url": "{{base_url}}/users/login"
+			},
+			"response": []
+		},
+		{
+			"name": "Refresh access token",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const json = pm.response.json();",
+							"if (json && json.token) { pm.collectionVariables.set('token', json.token); }",
+							"if (json && json.refresh_token) { pm.collectionVariables.set('refresh_token', json.refresh_token); }"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+				},
+				"url": "{{base_url}}/auth/refresh"
+			},
+			"response": []
+		},
+		{
+			"name": "Logout (revoke refresh token)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+				},
+				"url": "{{base_url}}/auth/logout"
+			},
+			"response": []
+		},
+		{
+			"name": "Get my groups",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/groups"
+			},
+			"response": []
+		},
+		{
+			"name": "Create group",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const json = pm.response.json();",
+							"const groupId = json && json.group && json.group.id ? json.group.id : (json && (json.id || json.group_id) ? (json.id || json.group_id) : null);",
+							"if (groupId) { pm.collectionVariables.set('group_id', groupId); }"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"name\": \"Family\" }"
+				},
+				"url": "{{base_url}}/groups"
+			},
+			"response": []
+		},
+		{
+			"name": "Join group (creator invites member)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const json = pm.response.json();",
+							"if (json && json.member && json.member.id) { pm.collectionVariables.set('member_id', json.member.id); }",
+							"if (json && json.member && json.member.name) { pm.collectionVariables.set('member_name', json.member.name); }"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"group_id\": {{group_id}},\n  \"member_email\": \"{{member_email}}\"\n}"
+				},
+				"url": "{{base_url}}/groups/join"
+			},
+			"response": []
+		},
+		{
+			"name": "Lookup users by email fragment",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/users/lookup?q={{lookup_query}}&limit=6"
+			},
+			"response": []
+		},
+		{
+			"name": "Remove member from group (DELETE)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/groups/{{group_id}}/members/{{member_id}}"
+			},
+			"response": []
+		},
+		{
+			"name": "List transactions for a group (GET)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/groups/{{group_id}}/transactions"
+			},
+			"response": []
+		},
+		{
+			"name": "Create transaction for group (POST)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"const json = pm.response.json();",
+							"if (json && (json.id || json.transaction_id)) { pm.collectionVariables.set('transaction_id', json.id || json.transaction_id); }"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"group_id\": {{group_id}},\n  \"title\": \"Dinner\",\n  \"amount\": \"120.00\",\n  \"payer_user_name\": \"{{user_a_name}}\",\n  \"note\": \"Dominos\",\n  \"splits\": [\n    { \"user_name\": \"{{user_a_name}}\", \"share_percent\": 50 },\n    { \"user_name\": \"{{user_b_name}}\", \"share_percent\": 50 }\n  ]\n}"
+				},
+				"url": "{{base_url}}/groups/{{group_id}}/transactions"
+			},
+			"response": []
+		},
+		{
+			"name": "Edit transaction (PUT)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"title\": \"Dinner (updated)\",\n  \"amount\": \"110.00\",\n  \"payer_user_name\": \"{{user_a_name}}\",\n  \"splits\": [\n    { \"user_name\": \"{{user_a_name}}\", \"share_percent\": 40 },\n    { \"user_name\": \"{{user_b_name}}\", \"share_percent\": 60 }\n  ]\n}"
+				},
+				"url": "{{base_url}}/transactions/{{transaction_id}}"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete transaction (DELETE) - creator or admin",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/transactions/{{transaction_id}}"
+			},
+			"response": []
+		},
+		{
+			"name": "Get group balances",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZW1haWwiOiJhaXNod2FyeWFAZ21haWwuY29tIiwiaWF0IjoxNzY0NTA1NTIzLCJleHAiOjE3NjQ1MDkxMjN9.mJGFPLZyuLG2bjyADDdr9fR5i6jLvIpys-i9q6GmKC0",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": "{{base_url}}/groups/{{group_id}}/balances"
+			},
+			"response": []
+		},
+		{
+			"name": "Get transaction history (audit)",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"url": "{{base_url}}/transactions/{{transaction_id}}/history"
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Receipt (local file example) - form-data",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "transaction_id",
+							"value": "1",
+							"type": "text"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/mnt/data/1000112620.jpg"
+						}
+					]
+				},
+				"url": "{{base_url}}/transactions/1/receipt"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:7071/api"
+		},
+		{
+			"key": "admin_email",
+			"value": "puru.2008@gmail.com"
+		},
+		{
+			"key": "admin_password",
+			"value": "adminpwd"
+		},
+		{
+			"key": "user_email",
+			"value": "aishwarya@gmail.com"
+		},
+		{
+			"key": "user_password",
+			"value": "aishpwd"
+		},
+		{
+			"key": "user_b_email",
+			"value": "puru.2008@gmail.com"
+		},
+		{
+			"key": "member_email",
+			"value": "puru.2008@gmail.com"
+		},
+		{
+			"key": "token",
+			"value": ""
+		},
+		{
+			"key": "refresh_token",
+			"value": ""
+		},
+		{
+			"key": "token_admin",
+			"value": ""
+		},
+		{
+			"key": "refresh_token_admin",
+			"value": ""
+		},
+		{
+			"key": "group_id",
+			"value": 1
+		},
+		{
+			"key": "member_id",
+			"value": ""
+		},
+		{
+			"key": "member_name",
+			"value": ""
+		},
+		{
+			"key": "lookup_query",
+			"value": "gmail.com"
+		},
+		{
+			"key": "user_a_name",
+			"value": ""
+		},
+		{
+			"key": "user_b_name",
+			"value": ""
+		},
+		{
+			"key": "transaction_id",
+			"value": 1
+		}
+	]
+}
