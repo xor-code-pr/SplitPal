@@ -2,31 +2,10 @@ import json
 from decimal import Decimal
 import azure.functions as func
 from db_sqlite import SessionLocal
-from models import Group, GroupMember, Transaction, Split
+from models import Group, GroupMember
 from auth_decorator import require_auth
 from http_utils import apply_cors, preflight_response
-
-
-def _compute_member_balance(db, group_id: int, member_id: int) -> Decimal:
-    cent = Decimal('0.01')
-    balance = Decimal('0.00')
-
-    transactions = db.query(Transaction).filter(Transaction.group_id == group_id).all()
-    for txn in transactions:
-        if txn.payer_user_id == member_id:
-            balance += Decimal(str(txn.amount)).quantize(cent)
-
-    splits = (
-        db.query(Split)
-        .join(Transaction, Split.transaction_id == Transaction.id)
-        .filter(Transaction.group_id == group_id)
-        .all()
-    )
-    for split in splits:
-        if split.user_id == member_id:
-            balance -= Decimal(str(split.share_amount)).quantize(cent)
-
-    return balance.quantize(cent)
+from balance_utils import compute_member_balance
 
 
 @require_auth
@@ -71,7 +50,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if membership.user_id == group.created_by:
             return apply_cors(func.HttpResponse("Group creator cannot be removed", status_code=400))
 
-        balance = _compute_member_balance(db, group_id, member_id)
+        balance = compute_member_balance(db, group_id, member_id)
         if abs(balance) > Decimal('0.009'):
             return apply_cors(func.HttpResponse("Cannot remove member with unsettled balance", status_code=400))
 

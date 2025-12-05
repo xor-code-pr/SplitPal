@@ -2,6 +2,7 @@ import json, azure.functions as func
 from db_sqlite import SessionLocal
 from models import Group, GroupMember, User
 from auth_decorator import require_auth
+from http_utils import apply_cors
 
 @require_auth
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -34,6 +35,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "created_by_name": name_map.get(g.created_by),
             "members": members_map.get(g.id, [])
         } for g in rows]
-        return func.HttpResponse(json.dumps({"groups": groups}), status_code=200, mimetype="application/json")
+        return apply_cors(func.HttpResponse(json.dumps({"groups": groups}), status_code=200, mimetype="application/json"))
     finally:
         db.close()
