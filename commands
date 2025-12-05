@@ -1,3 +1,8 @@
+# for Emulator
+set PATH=C:\Users\purne\AppData\Local\Android\Sdk\platform-tools;%PATH%
+set ANDROID_SDK_ROOT=C:\Users\purne\AppData\Local\Android\Sdk
+set ANDROID_HOME=C:\Users\purne\AppData\Local\Android\Sdk
+
 #in emulator
 set EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:7071/api
 npm run android
@@ -7,6 +12,8 @@ set EXPO_PUBLIC_API_BASE_URL=http://192.168.29.15:7071/api
 
 #web UI
 npx expo start --web
+
+
 
 func host start --address 0.0.0.0 --port 7071 --cors "*" 
 func host start --useHttps --cert "splitpal-local.pfx" --password "StrongPass123!" --address 0.0.0.0 --port 7071 --cors "*"
