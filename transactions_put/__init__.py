@@ -38,7 +38,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         }
 
         title = payload.get("title", trx.title)
-        amount = decimal.Decimal(str(payload.get("amount", trx.amount)))
+        cent = decimal.Decimal('0.01')
+        tolerance = decimal.Decimal('0.01')
+        amount = decimal.Decimal(str(payload.get("amount", trx.amount))).quantize(cent)
         payer_user_name = payload.get("payer_user_name")
         raw_payer_user_id = payload.get("payer_user_id")
         if raw_payer_user_id is not None:
@@ -73,19 +75,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     except (TypeError, ValueError):
                         return func.HttpResponse("Invalid split user id", status_code=400)
                 if 'share_amount' in s:
-                    sa = decimal.Decimal(str(s['share_amount']))
+                    sa = decimal.Decimal(str(s['share_amount'])).quantize(cent)
+                    sp_decimal = None
+                    if s.get('share_percent') is not None:
+                        sp_decimal = decimal.Decimal(str(s['share_percent'])).quantize(decimal.Decimal('0.01'))
                 elif 'share_percent' in s:
-                    sp = decimal.Decimal(str(s['share_percent']))
-                    sa = (sp * amount / decimal.Decimal('100')).quantize(decimal.Decimal('0.01'))
+                    sp_decimal = decimal.Decimal(str(s['share_percent'])).quantize(decimal.Decimal('0.01'))
+                    sa = (sp_decimal * amount / decimal.Decimal('100')).quantize(cent)
                 else:
                     return func.HttpResponse("Each split must have share_amount or share_percent", status_code=400)
                 computed_sum += sa
-                sp_value = s.get('share_percent')
-                sp_decimal = decimal.Decimal(str(sp_value)) if sp_value is not None else None
                 new_split_objs.append((int(target_user_id), sa, sp_decimal))
 
-            diff = abs(amount - computed_sum)
-            if diff > decimal.Decimal('0.02'):
+            diff = (amount - computed_sum).quantize(cent)
+            if diff != decimal.Decimal('0.00'):
+                if abs(diff) > tolerance or not new_split_objs:
+                    return func.HttpResponse("Splits do not sum to amount", status_code=400)
+                uid, sa, sp = new_split_objs[-1]
+                adjusted = (sa + diff).quantize(cent)
+                if adjusted < decimal.Decimal('0.00'):
+                    return func.HttpResponse("Invalid split totals", status_code=400)
+                new_split_objs[-1] = (uid, adjusted, sp)
+                computed_sum = (computed_sum + diff).quantize(cent)
+
+            if computed_sum != amount:
                 return func.HttpResponse("Splits do not sum to amount", status_code=400)
 
             db.query(Split).filter(Split.transaction_id == trx.id).delete()

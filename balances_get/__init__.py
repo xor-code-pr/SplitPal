@@ -13,34 +13,51 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         body = None
     # Prefer route param, then query string, then JSON body
     route_group_id = getattr(req, 'route_params', {}).get('group_id')
-    group_id = route_group_id or req.params.get('group_id') or ((body or {}) .get('group_id'))
-    if not group_id:
+    group_id_raw = route_group_id or req.params.get('group_id') or ((body or {}) .get('group_id'))
+    if not group_id_raw:
         return func.HttpResponse("Missing group_id", status_code=400)
     user = getattr(req, "current_user")
     db = SessionLocal()
     try:
-        if not user_in_group(db, user.id, int(group_id)):
+        try:
+            group_id = int(group_id_raw)
+        except (TypeError, ValueError):
+            return func.HttpResponse("Invalid group_id", status_code=400)
+
+        if not user_in_group(db, user.id, group_id):
             return func.HttpResponse("Not a member", status_code=403)
-        txns = db.query(Transaction).filter(Transaction.group_id == int(group_id)).all()
-        txn_payer = {t.id: t.payer_user_id for t in txns}
+        txns = db.query(Transaction).filter(Transaction.group_id == group_id).all()
         # fetch members to ensure balances include zero rows
-        members = db.query(GroupMember).filter(GroupMember.group_id == int(group_id)).all()
+        members = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
         member_ids = {m.user_id for m in members}
 
-        splits = db.query(Split).join(Transaction, Split.transaction_id == Transaction.id).filter(Transaction.group_id == int(group_id)).all()
+        cent = decimal.Decimal('0.01')
         balances = {uid: decimal.Decimal('0.00') for uid in member_ids}
-        for s in splits:
-            payer = txn_payer.get(s.transaction_id)
+
+        for txn in txns:
+            payer = txn.payer_user_id
             if payer is None:
                 continue
-            uid = s.user_id
-            amt = decimal.Decimal(str(s.share_amount))
-            if uid == payer:
-                continue
+            amt = decimal.Decimal(str(txn.amount)).quantize(cent)
             balances.setdefault(payer, decimal.Decimal('0.00'))
-            balances.setdefault(uid, decimal.Decimal('0.00'))
             balances[payer] += amt
-            balances[uid] -= amt
+
+        splits = (
+            db.query(Split)
+            .join(Transaction, Split.transaction_id == Transaction.id)
+            .filter(Transaction.group_id == group_id)
+            .all()
+        )
+        for s in splits:
+            share = decimal.Decimal(str(s.share_amount)).quantize(cent)
+            balances.setdefault(s.user_id, decimal.Decimal('0.00'))
+            balances[s.user_id] -= share
+
+        total_balance = sum(balances.values())
+        if total_balance != decimal.Decimal('0.00') and abs(total_balance) <= cent and balances:
+            first_key = next(iter(balances))
+            balances[first_key] = (balances[first_key] - total_balance).quantize(cent)
+
         user_ids = list(balances.keys())
         users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []
         user_map = {u.id: u.name for u in users}
@@ -48,7 +65,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             {
                 "user_id": uid,
                 "user_name": user_map.get(uid),
-                "balance": str(amount.quantize(decimal.Decimal('0.01')))
+                "balance": str(amount.quantize(cent))
             }
             for uid, amount in balances.items()
         ]

@@ -8,30 +8,25 @@ from http_utils import apply_cors, preflight_response
 
 
 def _compute_member_balance(db, group_id: int, member_id: int) -> Decimal:
-    transactions = db.query(Transaction).filter(Transaction.group_id == group_id).all()
-    if not transactions:
-        return Decimal('0.00')
+    cent = Decimal('0.01')
+    balance = Decimal('0.00')
 
-    payer_map = {txn.id: txn.payer_user_id for txn in transactions}
+    transactions = db.query(Transaction).filter(Transaction.group_id == group_id).all()
+    for txn in transactions:
+        if txn.payer_user_id == member_id:
+            balance += Decimal(str(txn.amount)).quantize(cent)
+
     splits = (
         db.query(Split)
         .join(Transaction, Split.transaction_id == Transaction.id)
         .filter(Transaction.group_id == group_id)
         .all()
     )
-
-    balance = Decimal('0.00')
     for split in splits:
-        payer_id = payer_map.get(split.transaction_id)
-        if payer_id is None:
-            continue
+        if split.user_id == member_id:
+            balance -= Decimal(str(split.share_amount)).quantize(cent)
 
-        amount = Decimal(str(split.share_amount))
-        if split.user_id == member_id and payer_id != member_id:
-            balance -= amount
-        elif payer_id == member_id and split.user_id != member_id:
-            balance += amount
-    return balance
+    return balance.quantize(cent)
 
 
 @require_auth

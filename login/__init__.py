@@ -25,8 +25,15 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.email==email).first()
-        if not user or not verify_password(password, user.password_hash):
+        verified = False
+        new_hash = None
+        if user:
+            verified, new_hash = verify_password(password, user.password_hash)
+        if not user or not verified:
             return apply_cors(func.HttpResponse("Invalid credentials", status_code=401))
+        if new_hash:
+            user.password_hash = new_hash
+            db.add(user)
         access_token = create_access_token(user.id, user.email)
         refresh_token = generate_refresh_token()
         expires_at = datetime.utcnow() + timedelta(seconds=JWT_REFRESH_EXP)

@@ -1,6 +1,6 @@
 import json, azure.functions as func
 from db_sqlite import SessionLocal
-from models import Transaction, TransactionHistory
+from models import Transaction, TransactionHistory, Split
 from auth_decorator import require_auth, user_is_admin
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -20,9 +20,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if not (is_admin or is_creator):
             return func.HttpResponse("Only group admins or the transaction creator can delete this transaction", status_code=403)
         hist = TransactionHistory(transaction_id=trx.id, group_id=trx.group_id, action='deleted',
-                                  data=json.dumps({"transaction_id": trx.id, "title": trx.title, "amount": str(trx.amount)}),
-                                  actor_user_id=user.id)
+                      data=json.dumps({"transaction_id": trx.id, "title": trx.title, "amount": str(trx.amount)}),
+                      actor_user_id=user.id)
         db.add(hist)
+        db.query(Split).filter(Split.transaction_id == trx.id).delete()
         db.delete(trx)
         db.commit()
         return func.HttpResponse(json.dumps({"ok": True}), status_code=200, mimetype="application/json")

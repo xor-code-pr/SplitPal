@@ -53,7 +53,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             except (TypeError, ValueError):
                 return func.HttpResponse("Invalid payer user id", status_code=400)
 
-        amt = decimal.Decimal(str(amount))
+        cent = decimal.Decimal('0.01')
+        tolerance = decimal.Decimal('0.01')
+        amt = decimal.Decimal(str(amount)).quantize(cent)
         computed = decimal.Decimal('0.00')
         split_objs = []
         for s in splits:
@@ -66,18 +68,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 if not target_user_id:
                     return func.HttpResponse(f"Member {user_name} not found in group", status_code=400)
             if 'share_amount' in s:
-                sa = decimal.Decimal(str(s['share_amount']))
+                sa = decimal.Decimal(str(s['share_amount'])).quantize(cent)
+                sp_decimal = None
+                if s.get('share_percent') is not None:
+                    sp_decimal = decimal.Decimal(str(s['share_percent'])).quantize(decimal.Decimal('0.01'))
             elif 'share_percent' in s:
-                sp = decimal.Decimal(str(s['share_percent']))
-                sa = (sp * amt / decimal.Decimal('100')).quantize(decimal.Decimal('0.01'))
+                sp_decimal = decimal.Decimal(str(s['share_percent'])).quantize(decimal.Decimal('0.01'))
+                sa = (sp_decimal * amt / decimal.Decimal('100')).quantize(cent)
             else:
                 return func.HttpResponse("Each split must have share_amount or share_percent", status_code=400)
             computed += sa
-            sp_value = s.get('share_percent')
-            sp_decimal = decimal.Decimal(str(sp_value)) if sp_value is not None else None
             split_objs.append((int(target_user_id), sa, sp_decimal))
 
-        if abs(amt - computed) > decimal.Decimal('0.02'):
+        diff = (amt - computed).quantize(cent)
+        if diff != decimal.Decimal('0.00'):
+            if abs(diff) > tolerance or not split_objs:
+                return func.HttpResponse("Splits do not sum to amount", status_code=400)
+            uid, sa, sp = split_objs[-1]
+            adjusted = (sa + diff).quantize(cent)
+            if adjusted < decimal.Decimal('0.00'):
+                return func.HttpResponse("Invalid split totals", status_code=400)
+            split_objs[-1] = (uid, adjusted, sp)
+            computed = (computed + diff).quantize(cent)
+
+        if computed != amt:
             return func.HttpResponse("Splits do not sum to amount", status_code=400)
 
         trx = Transaction(
