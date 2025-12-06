@@ -25,3 +25,8 @@ eas login
 eas build:configure
 eas build --platform android --profile preview
 eas build --platform android --profile preview --local
+
+#cloudflare
+winget install --id Cloudflare.cloudflared
+set PATH=%PATH%;C:\Program Files (x86)\cloudflared
+cloudflared tunnel --url http://192.168.29.15:7071
