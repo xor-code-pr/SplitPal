@@ -1,6 +1,6 @@
 import json
 import azure.functions as func
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_
 from db_sqlite import SessionLocal
 from models import User
 from auth_decorator import require_auth
@@ -25,7 +25,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         stmt = db.query(User)
         if query:
             lowered = f"%{query.lower()}%"
-            stmt = stmt.filter(sa_func.lower(User.email).like(lowered))
+            stmt = stmt.filter(
+                or_(
+                    sa_func.lower(User.email).like(lowered),
+                    sa_func.lower(User.name).like(lowered)
+                )
+            )
         users = (
             stmt.order_by(User.email.asc())
             .limit(limit)

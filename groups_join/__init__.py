@@ -3,7 +3,7 @@ import azure.functions as func
 from sqlalchemy import func as sa_func
 from db_sqlite import SessionLocal
 from models import Group, GroupMember, User
-from auth_decorator import require_auth
+from auth_decorator import require_auth, user_is_admin
 from http_utils import apply_cors, preflight_response
 
 @require_auth
@@ -24,22 +24,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     user = getattr(req, "current_user")
     db = SessionLocal()
     try:
-        g = db.query(Group).filter(Group.id == group_id).first()
+        try:
+            group_id_int = int(group_id)
+        except (TypeError, ValueError):
+            return apply_cors(func.HttpResponse("Invalid group_id", status_code=400))
+
+        g = db.query(Group).filter(Group.id == group_id_int).first()
         if not g:
             return apply_cors(func.HttpResponse("Group not found", status_code=404))
 
         current_membership = db.query(GroupMember).filter(
-            GroupMember.group_id == group_id,
+            GroupMember.group_id == group_id_int,
             GroupMember.user_id == user.id
         ).first()
         if not current_membership:
             return apply_cors(func.HttpResponse("Not a member of this group", status_code=403))
 
         if not member_email_raw:
-            return apply_cors(func.HttpResponse("Only the group creator can add members by email.", status_code=403))
+            return apply_cors(func.HttpResponse("Provide the email of the member to add", status_code=400))
 
-        if g.created_by != user.id:
-            return apply_cors(func.HttpResponse("Only the group creator can add members", status_code=403))
+        if not user_is_admin(db, user.id, group_id_int):
+            return apply_cors(func.HttpResponse("Only group admins can add members", status_code=403))
 
         member_email = member_email_raw.strip().lower()
         if not member_email:
@@ -54,14 +59,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return apply_cors(func.HttpResponse("User not found", status_code=404))
 
         existing = db.query(GroupMember).filter(
-            GroupMember.group_id == group_id,
+            GroupMember.group_id == group_id_int,
             GroupMember.user_id == target_user.id
         ).first()
         if existing:
             return apply_cors(func.HttpResponse("User already a member", status_code=400))
 
         role = 'admin' if target_user.id == g.created_by else 'member'
-        gm = GroupMember(group_id=group_id, user_id=target_user.id, role=role)
+        gm = GroupMember(group_id=group_id_int, user_id=target_user.id, role=role)
         db.add(gm)
         db.commit()
         payload = {

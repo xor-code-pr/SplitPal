@@ -17,15 +17,29 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         members_map = {}
         if group_ids:
             member_rows = (
-                db.query(GroupMember.group_id, User.id, User.name)
+                db.query(
+                    GroupMember.group_id,
+                    GroupMember.user_id,
+                    GroupMember.role,
+                    GroupMember.joined_at,
+                    User.name,
+                    User.global_admin
+                )
                 .join(User, GroupMember.user_id == User.id)
                 .filter(GroupMember.group_id.in_(group_ids))
                 .all()
             )
-            for group_id, member_id, member_name in member_rows:
+            for group_id, member_id, member_role, joined_at, member_name, is_global_admin in member_rows:
+                normalized_role = (member_role or "").strip().lower()
+                is_admin_flag = bool(
+                    is_global_admin or normalized_role in ("admin", "owner")
+                )
                 members_map.setdefault(group_id, []).append({
                     "user_id": member_id,
-                    "user_name": member_name
+                    "user_name": member_name,
+                    "role": member_role,
+                    "is_admin": is_admin_flag,
+                    "joined_at": joined_at.isoformat() if joined_at else None
                 })
 
         groups = [{

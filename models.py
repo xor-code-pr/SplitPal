@@ -1,4 +1,23 @@
-from sqlalchemy import Column, Integer, Text, Numeric, Boolean, TIMESTAMP, ForeignKey, func
+from sqlalchemy import Column, Integer, Text, Boolean, TIMESTAMP, ForeignKey, func
+from sqlalchemy.types import TypeDecorator
+import decimal
+
+
+class SqliteDecimal(TypeDecorator):
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if not isinstance(value, decimal.Decimal):
+            value = decimal.Decimal(str(value))
+        return format(value, "f")
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return decimal.Decimal(value)
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -32,7 +51,7 @@ class Transaction(Base):
     id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
     title = Column(Text)
-    amount = Column(Numeric(12,2), nullable=False)
+    amount = Column(SqliteDecimal, nullable=False)
     currency = Column(Text, nullable=False, default="INR")
     payer_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     note = Column(Text)
@@ -45,8 +64,8 @@ class Split(Base):
     id = Column(Integer, primary_key=True)
     transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    share_amount = Column(Numeric(12,2), nullable=False)
-    share_percent = Column(Numeric(5,2))
+    share_amount = Column(SqliteDecimal, nullable=False)
+    share_percent = Column(SqliteDecimal)
     settled = Column(Boolean, default=False)
 
 class TransactionHistory(Base):
