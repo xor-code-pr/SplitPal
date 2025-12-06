@@ -74,9 +74,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 next_admin.role = "admin"
                 db.add(next_admin)
 
+        remaining_members = db.query(GroupMember).filter(GroupMember.group_id == group_id).count()
+
+        if remaining_members == 0:
+            db.delete(group)
+            db.commit()
+            payload = {"ok": True, "removed_user_id": member_id, "self_removed": is_self_request, "group_deleted": True}
+            return apply_cors(func.HttpResponse(json.dumps(payload), status_code=200, mimetype="application/json"))
+
         db.commit()
 
-        payload = {"ok": True, "removed_user_id": member_id, "self_removed": is_self_request}
+        payload = {"ok": True, "removed_user_id": member_id, "self_removed": is_self_request, "group_deleted": False}
         return apply_cors(func.HttpResponse(json.dumps(payload), status_code=200, mimetype="application/json"))
     finally:
         db.close()

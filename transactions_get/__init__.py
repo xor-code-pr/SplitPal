@@ -1,8 +1,14 @@
-import json, azure.functions as func
+import json
+import azure.functions as func
+from sqlalchemy import func as sa_func
+
 from db_sqlite import SessionLocal
 from models import Transaction, Split, User, Group
 from auth_decorator import require_auth, user_in_group
 from http_utils import apply_cors
+
+DEFAULT_INITIAL_LIMIT = 3
+MAX_LIMIT = 50
 
 @require_auth
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -21,10 +27,40 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if not user_in_group(db, user.id, group_id_int):
             return apply_cors(func.HttpResponse("Not a member of this group", status_code=403))
 
+        raw_limit = req.params.get('limit') if hasattr(req, 'params') else None
+        if raw_limit is None and body:
+            raw_limit = body.get('limit')
+        raw_offset = req.params.get('offset') if hasattr(req, 'params') else None
+        if raw_offset is None and body:
+            raw_offset = body.get('offset')
+
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            limit = DEFAULT_INITIAL_LIMIT
+        try:
+            offset = int(raw_offset)
+        except (TypeError, ValueError):
+            offset = 0
+
+        if limit <= 0:
+            limit = DEFAULT_INITIAL_LIMIT
+        limit = min(limit, MAX_LIMIT)
+        if offset < 0:
+            offset = 0
+
+        total_count = (
+            db.query(sa_func.count(Transaction.id))
+            .filter(Transaction.group_id == group_id_int)
+            .scalar()
+        ) or 0
+
         txns = (
             db.query(Transaction)
             .filter(Transaction.group_id == group_id_int)
             .order_by(Transaction.created_at.desc())
+            .offset(offset)
+            .limit(limit)
             .all()
         )
 
@@ -66,13 +102,31 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 "splits": [
                     {
                         "split_id": s.id,
+                        "user_id": s.user_id,
                         "user_name": user_map.get(s.user_id),
-                        "share_amount": str(s.share_amount)
+                        "share_amount": str(s.share_amount),
+                        "share_percent": str(s.share_percent) if s.share_percent is not None else None,
                     }
                     for s in splits
                 ]
             })
 
-        return apply_cors(func.HttpResponse(json.dumps({"transactions": out}), status_code=200, mimetype="application/json"))
+        next_offset = offset + len(txns)
+        response_payload = {
+            "transactions": out,
+            "total": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": next_offset < total_count,
+            "next_offset": next_offset,
+        }
+
+        return apply_cors(
+            func.HttpResponse(
+                json.dumps(response_payload),
+                status_code=200,
+                mimetype="application/json"
+            )
+        )
     finally:
         db.close()
