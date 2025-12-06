@@ -1,10 +1,12 @@
 import json
 from decimal import Decimal
+
 import azure.functions as func
+
+from auth_decorator import require_auth, user_is_admin
 from db_sqlite import SessionLocal
-from models import User, GroupMember, Transaction, Split, TransactionHistory
-from auth_decorator import require_auth
-from auth_decorator import user_is_admin
+from logging_utils import ensure_request_logger
+from models import GroupMember, Split, Transaction, TransactionHistory, User
 
 
 def _compute_group_balance(db, group_id: int, member_id: int) -> Decimal:
@@ -39,20 +41,34 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     user = getattr(req, "current_user")
     user_id = req.route_params.get('id') or req.params.get('id')
     if not user_id:
+        ensure_request_logger(req, name=__name__, user=user)
         return func.HttpResponse("Missing user id", status_code=400)
+    try:
+        target_user_id = int(user_id)
+    except (TypeError, ValueError):
+        ensure_request_logger(req, name=__name__, user=user)
+        return func.HttpResponse("Invalid user id", status_code=400)
+    log = ensure_request_logger(
+        req,
+        name=__name__,
+        user=user,
+        extra={"target_user_id": target_user_id},
+    )
     db = SessionLocal()
     try:
         if not user_is_admin(db, user.id, None):
+            log.warning("Non-admin attempted to delete user")
             return func.HttpResponse("Admin privileges required", status_code=403)
-        target = db.query(User).filter(User.id == int(user_id)).first()
+        target = db.query(User).filter(User.id == target_user_id).first()
         if not target:
+            log.warning("Target user not found")
             return func.HttpResponse("User not found", status_code=404)
         # Remove memberships
 
-        memberships = db.query(GroupMember).filter(GroupMember.user_id == int(user_id)).all()
+        memberships = db.query(GroupMember).filter(GroupMember.user_id == target_user_id).all()
         pending_balances = []
         for membership in memberships:
-            balance = _compute_group_balance(db, membership.group_id, int(user_id))
+            balance = _compute_group_balance(db, membership.group_id, target_user_id)
             if abs(balance) > Decimal('0.009'):
                 pending_balances.append(
                     {
@@ -66,21 +82,32 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 "error": "Cannot delete user with unsettled balances",
                 "pending": pending_balances
             }
+            log.warning(
+                "Blocked user delete due to pending balances",
+                extra={"pending_groups": len(pending_balances)},
+            )
             return func.HttpResponse(json.dumps(payload), status_code=400, mimetype="application/json")
-        db.query(GroupMember).filter(GroupMember.user_id == int(user_id)).delete()
+        db.query(GroupMember).filter(GroupMember.user_id == target_user_id).delete()
         # Clean up transactions where the user was the payer
-        payer_transactions = db.query(Transaction).filter(Transaction.payer_user_id == int(user_id)).all()
+        payer_transactions = db.query(Transaction).filter(Transaction.payer_user_id == target_user_id).all()
         for tx in payer_transactions:
             db.query(Split).filter(Split.transaction_id == tx.id).delete()
             db.query(TransactionHistory).filter(TransactionHistory.transaction_id == tx.id).delete()
             db.delete(tx)
         # Remove splits where the user participated in others' transactions
-        db.query(Split).filter(Split.user_id == int(user_id)).delete()
+        db.query(Split).filter(Split.user_id == target_user_id).delete()
         # Remove history entries authored by this user
-        db.query(TransactionHistory).filter(TransactionHistory.actor_user_id == int(user_id)).delete()
+        db.query(TransactionHistory).filter(TransactionHistory.actor_user_id == target_user_id).delete()
         # Delete user
         db.delete(target)
         db.commit()
+        log.info(
+            "Deleted user",
+            extra={
+                "removed_memberships": len(memberships),
+                "payer_transactions": len(payer_transactions),
+            },
+        )
         return func.HttpResponse(json.dumps({"ok": True}), status_code=200, mimetype="application/json")
     finally:
         db.close()

@@ -1,12 +1,15 @@
 import json, azure.functions as func
-from db_sqlite import SessionLocal
-from models import Group, GroupMember, User
+
 from auth_decorator import require_auth
+from db_sqlite import SessionLocal
 from http_utils import apply_cors
+from logging_utils import ensure_request_logger
+from models import Group, GroupMember, User
 
 @require_auth
 def main(req: func.HttpRequest) -> func.HttpResponse:
     user = getattr(req, "current_user")
+    log = ensure_request_logger(req, name=__name__, user=user)
     db = SessionLocal()
     try:
         rows = db.query(Group).join(GroupMember, Group.id == GroupMember.group_id).filter(GroupMember.user_id == user.id).all()
@@ -49,6 +52,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "created_by_name": name_map.get(g.created_by),
             "members": members_map.get(g.id, [])
         } for g in rows]
+        log.info("Fetched user groups", extra={"group_count": len(groups)})
         return apply_cors(func.HttpResponse(json.dumps({"groups": groups}), status_code=200, mimetype="application/json"))
     finally:
         db.close()

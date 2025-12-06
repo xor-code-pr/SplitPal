@@ -1,11 +1,13 @@
 import json
+
 import azure.functions as func
 from sqlalchemy import func as sa_func
 
-from db_sqlite import SessionLocal
-from models import Transaction, Split, User, Group
 from auth_decorator import require_auth, user_in_group
+from db_sqlite import SessionLocal
 from http_utils import apply_cors
+from logging_utils import ensure_request_logger
+from models import Group, Split, Transaction, User
 
 DEFAULT_INITIAL_LIMIT = 3
 MAX_LIMIT = 50
@@ -19,12 +21,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     route_group_id = getattr(req, 'route_params', {}).get('group_id')
     group_id = route_group_id or req.params.get('group_id') or ((body or {}) .get('group_id'))
     if not group_id:
+        ensure_request_logger(req, name=__name__, user=getattr(req, "current_user", None))
         return apply_cors(func.HttpResponse("Missing group_id", status_code=400))
     user = getattr(req, "current_user")
     db = SessionLocal()
     try:
-        group_id_int = int(group_id)
+        try:
+            group_id_int = int(group_id)
+        except (TypeError, ValueError):
+            ensure_request_logger(req, name=__name__, user=user)
+            return apply_cors(func.HttpResponse("Invalid group_id", status_code=400))
+
+        log = ensure_request_logger(req, name=__name__, user=user, extra={"group_id": group_id_int})
         if not user_in_group(db, user.id, group_id_int):
+            log.warning("User not a member while listing transactions")
             return apply_cors(func.HttpResponse("Not a member of this group", status_code=403))
 
         raw_limit = req.params.get('limit') if hasattr(req, 'params') else None
@@ -120,6 +130,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "has_more": next_offset < total_count,
             "next_offset": next_offset,
         }
+
+        log.info(
+            "Fetched transactions",
+            extra={
+                "returned": len(out),
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
 
         return apply_cors(
             func.HttpResponse(

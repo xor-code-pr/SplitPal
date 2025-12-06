@@ -1,11 +1,14 @@
 import json
 from decimal import Decimal
+
 import azure.functions as func
-from db_sqlite import SessionLocal
-from models import Group, GroupMember
+
 from auth_decorator import require_auth, user_is_admin
-from http_utils import apply_cors, preflight_response
 from balance_utils import compute_member_balance
+from db_sqlite import SessionLocal
+from http_utils import apply_cors, preflight_response
+from logging_utils import ensure_request_logger
+from models import Group, GroupMember
 
 
 @require_auth
@@ -18,12 +21,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     member_id_raw = route_params.get("member_id") or req.params.get("member_id")
 
     if not group_id_raw or not member_id_raw:
+        ensure_request_logger(req, name=__name__, user=getattr(req, "current_user", None))
         return apply_cors(func.HttpResponse("Missing group_id or member_id", status_code=400))
 
     try:
         group_id = int(group_id_raw)
         member_id = int(member_id_raw)
     except ValueError:
+        ensure_request_logger(req, name=__name__, user=getattr(req, "current_user", None))
         return apply_cors(func.HttpResponse("Invalid identifiers", status_code=400))
 
     user = getattr(req, "current_user")
@@ -32,11 +37,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         group = db.query(Group).filter(Group.id == group_id).first()
         if not group:
+            ensure_request_logger(req, name=__name__, user=user, extra={"group_id": group_id, "member_id": member_id})
             return apply_cors(func.HttpResponse("Group not found", status_code=404))
 
         is_self_request = user.id == member_id
 
+        log = ensure_request_logger(
+            req,
+            name=__name__,
+            user=user,
+            extra={"group_id": group_id, "target_member_id": member_id, "self_request": is_self_request},
+        )
+
         if not is_self_request and not user_is_admin(db, user.id, group_id):
+            log.warning("Non-admin tried to remove member")
             return apply_cors(func.HttpResponse("Only group admins can remove members", status_code=403))
 
         membership = (
@@ -45,20 +59,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             .first()
         )
         if not membership:
+            log.warning("Member not found in group")
             return apply_cors(func.HttpResponse("User is not a member of this group", status_code=404))
 
         if membership.user_id == group.created_by and not is_self_request:
+            log.warning("Attempted to remove group creator")
             return apply_cors(func.HttpResponse("Group creator cannot be removed", status_code=400))
 
         balance = compute_member_balance(db, group_id, member_id)
         if abs(balance) > Decimal('0.009'):
             message = "Settle your balance before leaving" if is_self_request else "Cannot remove member with unsettled balance"
+            log.warning("Pending balance prevented removal", extra={"balance": str(balance)})
             return apply_cors(func.HttpResponse(message, status_code=400))
 
         is_admin_member = membership.role == "admin"
 
         db.delete(membership)
         db.flush()
+        log.info("Removed member from group")
 
         if is_admin_member:
             next_admin = (
@@ -73,6 +91,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             if next_admin:
                 next_admin.role = "admin"
                 db.add(next_admin)
+                log.info("Promoted next member to admin", extra={"new_admin_user_id": next_admin.user_id})
 
         remaining_members = db.query(GroupMember).filter(GroupMember.group_id == group_id).count()
 
@@ -80,6 +99,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             db.delete(group)
             db.commit()
             payload = {"ok": True, "removed_user_id": member_id, "self_removed": is_self_request, "group_deleted": True}
+            log.info("Deleted group after last member left")
             return apply_cors(func.HttpResponse(json.dumps(payload), status_code=200, mimetype="application/json"))
 
         db.commit()

@@ -1,29 +1,42 @@
-import json, decimal, logging, azure.functions as func
-from db_sqlite import SessionLocal
-from models import Transaction, Split, TransactionHistory, User, GroupMember
-from auth_decorator import require_auth, user_in_group
-from sqlalchemy.exc import SQLAlchemyError
-from http_utils import apply_cors
+import json, decimal, azure.functions as func
 
-logger = logging.getLogger(__name__)
+from auth_decorator import require_auth, user_in_group
+from db_sqlite import SessionLocal
+from http_utils import apply_cors
+from logging_utils import ensure_request_logger
+from models import GroupMember, Split, Transaction, TransactionHistory, User
+from sqlalchemy.exc import SQLAlchemyError
 
 @require_auth
 def main(req: func.HttpRequest) -> func.HttpResponse:
     tx_id = req.route_params.get('id') or req.params.get('id')
     if not tx_id:
+        ensure_request_logger(req, name=__name__, user=getattr(req, "current_user", None))
         return apply_cors(func.HttpResponse("Missing transaction id", status_code=400))
     try:
         payload = req.get_json()
-    except:
+    except Exception:
+        ensure_request_logger(req, name=__name__, user=getattr(req, "current_user", None))
         return apply_cors(func.HttpResponse("Invalid JSON", status_code=400))
 
     user = getattr(req, "current_user")
+    log = ensure_request_logger(req, name=__name__, user=user)
     db = SessionLocal()
     try:
-        trx = db.query(Transaction).filter(Transaction.id == int(tx_id)).first()
+        try:
+            tx_id_int = int(tx_id)
+        except (TypeError, ValueError):
+            log.warning("Invalid transaction id supplied", extra={"transaction_id": tx_id})
+            return apply_cors(func.HttpResponse("Invalid transaction id", status_code=400))
+
+        log = ensure_request_logger(req, name=__name__, user=user, extra={"transaction_id": tx_id_int})
+
+        trx = db.query(Transaction).filter(Transaction.id == tx_id_int).first()
         if not trx:
+            log.warning("Transaction not found for update")
             return apply_cors(func.HttpResponse("Transaction not found", status_code=404))
         if not user_in_group(db, user.id, trx.group_id):
+            log.warning("User not in group when updating transaction", extra={"group_id": trx.group_id})
             return apply_cors(func.HttpResponse("Not a member of this group", status_code=403))
 
         member_rows = (
@@ -51,12 +64,15 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             try:
                 payer_user_id = int(raw_payer_user_id)
             except (TypeError, ValueError):
+                log.warning("Invalid payer user id", extra={"payer_user_id": raw_payer_user_id})
                 return apply_cors(func.HttpResponse("Invalid payer user id", status_code=400))
             if payer_user_id not in group_member_ids:
+                log.warning("Payer not in group", extra={"payer_user_id": payer_user_id})
                 return apply_cors(func.HttpResponse("Payer not a member of this group", status_code=403))
         elif payer_user_name:
             payer_user_id = name_to_id.get(payer_user_name.strip().lower())
             if not payer_user_id:
+                log.warning("Payer name not found", extra={"payer_user_name": payer_user_name})
                 return apply_cors(func.HttpResponse("Payer not found in group", status_code=400))
         else:
             payer_user_id = trx.payer_user_id
@@ -65,6 +81,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
         splits_provided = splits is not None
         if not splits_provided and payload.get("amount") is not None:
+            log.warning("Amount update without splits")
             return apply_cors(func.HttpResponse("Updating amount requires updated splits", status_code=400))
 
         if splits_provided:
@@ -75,16 +92,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 if target_user_id is None:
                     user_name = s.get('user_name')
                     if not user_name:
+                        log.warning("Split missing user reference")
                         return apply_cors(func.HttpResponse("Each split must include user_id or user_name", status_code=400))
                     target_user_id = name_to_id.get(user_name.strip().lower())
                     if not target_user_id:
+                        log.warning("Split member not found", extra={"user_name": user_name})
                         return apply_cors(func.HttpResponse(f"Member {user_name} not found in group", status_code=400))
                 else:
                     try:
                         target_user_id = int(target_user_id)
                     except (TypeError, ValueError):
+                        log.warning("Invalid split user id", extra={"target_user_id": target_user_id})
                         return apply_cors(func.HttpResponse("Invalid split user id", status_code=400))
                     if target_user_id not in group_member_ids:
+                        log.warning("Split member not part of group", extra={"target_user_id": target_user_id})
                         return apply_cors(func.HttpResponse("Split member not in group", status_code=403))
                 if 'share_amount' in s:
                     sa = decimal.Decimal(str(s['share_amount'])).quantize(cent)
@@ -95,6 +116,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     sp_decimal = decimal.Decimal(str(s['share_percent'])).quantize(decimal.Decimal('0.01'))
                     sa = (sp_decimal * amount / decimal.Decimal('100')).quantize(cent)
                 else:
+                    log.warning("Split missing share definition")
                     return apply_cors(func.HttpResponse("Each split must have share_amount or share_percent", status_code=400))
                 computed_sum += sa
                 new_split_objs.append((int(target_user_id), sa, sp_decimal))
@@ -102,15 +124,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             diff = (amount - computed_sum).quantize(cent)
             if diff != decimal.Decimal('0.00'):
                 if abs(diff) > tolerance or not new_split_objs:
+                    log.warning("Split totals outside tolerance", extra={"difference": str(diff)})
                     return apply_cors(func.HttpResponse("Splits do not sum to amount", status_code=400))
                 uid, sa, sp = new_split_objs[-1]
                 adjusted = (sa + diff).quantize(cent)
                 if adjusted < decimal.Decimal('0.00'):
+                    log.warning("Adjusted split became negative", extra={"difference": str(diff)})
                     return apply_cors(func.HttpResponse("Invalid split totals", status_code=400))
                 new_split_objs[-1] = (uid, adjusted, sp)
                 computed_sum = (computed_sum + diff).quantize(cent)
 
             if computed_sum != amount:
+                log.warning("Split totals still mismatch", extra={"computed": str(computed_sum), "amount": str(amount)})
                 return apply_cors(func.HttpResponse("Splits do not sum to amount", status_code=400))
 
             db.query(Split).filter(Split.transaction_id == trx.id).delete()
@@ -137,10 +162,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                                   actor_user_id=user.id)
         db.add(hist)
         db.commit()
+        log.info("Updated transaction", extra={"transaction_id": trx.id, "splits_updated": splits_provided})
         return apply_cors(func.HttpResponse(json.dumps({"ok": True}), status_code=200, mimetype="application/json"))
     except SQLAlchemyError as e:
         db.rollback()
-        logger.exception("Failed to update transaction %s", tx_id)
+        log.exception("Database error while updating transaction")
         return apply_cors(func.HttpResponse("DB error", status_code=500))
     finally:
         db.close()

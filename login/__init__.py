@@ -1,26 +1,32 @@
 import json, azure.functions as func
 from datetime import datetime, timedelta
-from db_sqlite import SessionLocal
-from models import User, RefreshToken
+
 from auth_utils import (
-    verify_password,
+    JWT_EXP,
+    JWT_REFRESH_EXP,
     create_access_token,
     generate_refresh_token,
     hash_refresh_token,
-    JWT_EXP,
-    JWT_REFRESH_EXP
+    verify_password,
 )
+from db_sqlite import SessionLocal
 from http_utils import apply_cors, preflight_response
+from logging_utils import ensure_request_logger
+from models import RefreshToken, User
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return preflight_response()
+    log = ensure_request_logger(req, name=__name__)
     try:
         data = req.get_json()
-    except:
+    except Exception:
+        log.warning("Login received invalid JSON")
         return apply_cors(func.HttpResponse("Invalid JSON", status_code=400))
     email = data.get("email"); password = data.get("password")
+    log = ensure_request_logger(req, name=__name__, user_email=email)
     if not all([email,password]):
+        log.warning("Login missing required fields")
         return apply_cors(func.HttpResponse("Missing fields", status_code=400))
     db = SessionLocal()
     try:
@@ -30,6 +36,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if user:
             verified, new_hash = verify_password(password, user.password_hash)
         if not user or not verified:
+            log.warning("Invalid credentials", extra={"email": email})
             return apply_cors(func.HttpResponse("Invalid credentials", status_code=401))
         if new_hash:
             user.password_hash = new_hash
@@ -47,6 +54,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             )
         )
         db.commit()
+        log = ensure_request_logger(req, name=__name__, user=user)
+        log.info("User logged in", extra={"user_id": user.id})
         payload = {
             "user": {
                 "id": user.id,
