@@ -1,11 +1,12 @@
 """
 FastAPI Main Application for SplitPal
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import os
+import time
 
 from app.database import engine, Base
 from app.routers import auth, groups, transactions, admin, balances, users
@@ -54,6 +55,25 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # Log incoming request
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    logger.info(f"Headers: {dict(request.headers)}")
+    logger.info(f"Client: {request.client.host if request.client else 'unknown'}")
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Log response time
+    process_time = time.time() - start_time
+    logger.info(f"Completed {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
+    
+    return response
 
 # Include routers
 app.include_router(auth.router, prefix="/api", tags=["Authentication"])
