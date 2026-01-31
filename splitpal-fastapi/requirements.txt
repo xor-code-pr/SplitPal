@@ -1,0 +1,20 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Database
+SQLAlchemy==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Authentication
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.8.0
+
+# Validation
+pydantic==2.5.3
+email-validator==2.1.0
+
+# Configuration
+python-dotenv==1.0.0

@@ -30,3 +30,22 @@ eas build --platform android --profile preview --local
 winget install --id Cloudflare.cloudflared
 set PATH=%PATH%;C:\Program Files (x86)\cloudflared
 cloudflared tunnel --url http://192.168.29.15:7071
+
+clouflare commands:
+cloudflared tunnel login
+cloudflared tunnel create puru-backend
+cloudflared tunnel route dns puru-backend api.puruworld.online
+
+>> C:\Users\purne\.cloudflared\config.yml
+config file:
+
+tunnel: puru-backend
+credentials-file: C:\Users\purne\.cloudflared\5856f418-7c65-4a7e-8541-698ee567df8f.json
+
+ingress:
+  - hostname: api.puruworld.online
+    service: http://localhost:8000
+  - service: http_status:404
+
+
+--> cloudflared tunnel run puru-backend

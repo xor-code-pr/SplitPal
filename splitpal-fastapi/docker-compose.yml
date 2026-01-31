@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: splitpal_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: splitpal
+      POSTGRES_USER: splitpal_user
+      POSTGRES_PASSWORD: splitpal_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitpal_user -d splitpal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: splitpal_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://splitpal_user:splitpal_password@db:5432/splitpal
+      JWT_SECRET: change_this_to_a_secure_random_secret_key
+      JWT_ALGO: HS256
+      JWT_EXP_SECONDS: 3600
+      JWT_REFRESH_EXP_SECONDS: 7776000
+      ALLOWED_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  postgres_data:
