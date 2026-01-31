@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Test</title>
+</head>
+<body>
+    <h1>CORS Test Page</h1>
+    <button onclick="testAPI()">Test API Call</button>
+    <pre id="result"></pre>
+
+    <script>
+        async function testAPI() {
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = 'Testing...';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/ping');
+                const data = await response.json();
+                resultEl.textContent = 'SUCCESS:\n' + JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultEl.textContent = 'CORS BLOCKED:\n' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

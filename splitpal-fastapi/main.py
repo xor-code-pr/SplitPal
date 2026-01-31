@@ -61,16 +61,21 @@ app.add_middleware(
 async def log_requests(request: Request, call_next):
     start_time = time.time()
     
-    # Log incoming request
+    # Log incoming request (including OPTIONS preflight)
     logger.info(f"Incoming request: {request.method} {request.url.path}")
-    logger.info(f"Headers: {dict(request.headers)}")
+    logger.info(f"Request Headers: {dict(request.headers)}")
     logger.info(f"Client: {request.client.host if request.client else 'unknown'}")
+    
+    # Log if this is a CORS preflight
+    if request.method == "OPTIONS":
+        logger.info("⚠️  CORS PREFLIGHT REQUEST")
     
     # Process request
     response = await call_next(request)
     
-    # Log response time
+    # Log response
     process_time = time.time() - start_time
+    logger.info(f"Response Headers: {dict(response.headers)}")
     logger.info(f"Completed {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.3f}s")
     
     return response
